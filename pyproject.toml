@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pm-party-client"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python SDK for Project Manager third-party authentication (Ed25519 + JWT + GraphQL)"
 readme = "README.md"
 license = "MIT"

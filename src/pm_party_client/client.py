@@ -41,6 +41,31 @@ class PartyClient:
 
     # -- public API ----------------------------------------------------------
 
+    def health(self) -> dict[str, Any]:
+        """Test connectivity and authentication against the PM backend.
+
+        Calls ``GET /api/v1/party/health`` and returns the response.
+        Raises :class:`PMConnectionError` on network issues or
+        :class:`PMAuthError` if the token is rejected.
+        """
+        token = self._token_mgr.generate_token()
+        health_url = self._url.rstrip("/").removesuffix("/graphql") + "/api/v1/party/health"
+
+        try:
+            resp = self._http.get(
+                health_url,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        except httpx.HTTPError as exc:
+            raise PMConnectionError(f"Connection error: {exc}") from exc
+
+        if resp.status_code == 401:
+            raise PMAuthError("Authentication failed — check your app_id and private key")
+        if resp.status_code >= 400:
+            raise PMConnectionError(f"HTTP {resp.status_code}: {resp.text}")
+
+        return resp.json()
+
     def query(
         self,
         query: str,
@@ -129,6 +154,31 @@ class AsyncPartyClient:
         self._http = httpx.AsyncClient(timeout=timeout)
 
     # -- public API ----------------------------------------------------------
+
+    async def health(self) -> dict[str, Any]:
+        """Test connectivity and authentication against the PM backend.
+
+        Calls ``GET /api/v1/party/health`` and returns the response.
+        Raises :class:`PMConnectionError` on network issues or
+        :class:`PMAuthError` if the token is rejected.
+        """
+        token = self._token_mgr.generate_token()
+        health_url = self._url.rstrip("/").removesuffix("/graphql") + "/api/v1/party/health"
+
+        try:
+            resp = await self._http.get(
+                health_url,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        except httpx.HTTPError as exc:
+            raise PMConnectionError(f"Connection error: {exc}") from exc
+
+        if resp.status_code == 401:
+            raise PMAuthError("Authentication failed — check your app_id and private key")
+        if resp.status_code >= 400:
+            raise PMConnectionError(f"HTTP {resp.status_code}: {resp.text}")
+
+        return resp.json()
 
     async def query(
         self,

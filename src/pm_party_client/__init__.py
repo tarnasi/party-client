@@ -1,6 +1,6 @@
 """pm-party-client — Python SDK for Project Manager third-party authentication."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from pm_party_client.client import AsyncPartyClient, PartyClient
 from pm_party_client.exceptions import (

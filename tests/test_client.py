@@ -19,6 +19,7 @@ def _make_private_key() -> str:
 
 
 FAKE_URL = "https://pm.test/graphql"
+FAKE_HEALTH_URL = "https://pm.test/api/v1/party/health"
 
 
 class TestPartyClient:
@@ -63,6 +64,37 @@ class TestPartyClient:
             with pytest.raises(PMConnectionError):
                 client.query("query { me { id } }")
 
+    @respx.mock
+    def test_health_success(self):
+        priv_pem = _make_private_key()
+        health_resp = {
+            "status": 200,
+            "message": "connected",
+            "party": {"app_id": "test", "app_name": "Test App"},
+        }
+
+        respx.get(FAKE_HEALTH_URL).respond(json=health_resp)
+
+        with PartyClient(url=FAKE_URL, app_id="test", private_key=priv_pem) as client:
+            result = client.health()
+
+        assert result["status"] == 200
+        assert result["message"] == "connected"
+        assert result["party"]["app_id"] == "test"
+
+    @respx.mock
+    def test_health_auth_failure(self):
+        priv_pem = _make_private_key()
+
+        respx.get(FAKE_HEALTH_URL).respond(
+            status_code=401,
+            json={"detail": "Invalid or missing party authentication token"},
+        )
+
+        with PartyClient(url=FAKE_URL, app_id="test", private_key=priv_pem) as client:
+            with pytest.raises(PMAuthError):
+                client.health()
+
 
 class TestAsyncPartyClient:
     @respx.mock
@@ -78,3 +110,21 @@ class TestAsyncPartyClient:
             result = await client.query("query { getParties { app_id } }")
 
         assert result == {"getParties": [{"app_id": "456"}]}
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_async_health_success(self):
+        priv_pem = _make_private_key()
+        health_resp = {
+            "status": 200,
+            "message": "connected",
+            "party": {"app_id": "test", "app_name": "Async App"},
+        }
+
+        respx.get(FAKE_HEALTH_URL).respond(json=health_resp)
+
+        async with AsyncPartyClient(url=FAKE_URL, app_id="test", private_key=priv_pem) as client:
+            result = await client.health()
+
+        assert result["message"] == "connected"
+        assert result["party"]["app_name"] == "Async App"

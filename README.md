@@ -158,6 +158,21 @@ except PMClientError as e:
     print(f"Client error: {e}")
 ```
 
+## Health Check
+
+Test your connection and credentials before making real API calls:
+
+```python
+result = client.health()
+# {'status': 200, 'message': 'connected', 'party': {'app_id': '...', 'app_name': '...'}}
+```
+
+Async:
+
+```python
+result = await async_client.health()
+```
+
 ## Python Version Support
 
 - Python 3.10+
