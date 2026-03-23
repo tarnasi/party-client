@@ -1,6 +1,14 @@
 # pm-party-client
 
-A lightweight Python SDK for third-party applications to authenticate and query the Project Manager GraphQL API using Ed25519 asymmetric key authentication.
+A lightweight Python SDK for third-party applications to authenticate and communicate with the **Project Manager** API using **Ed25519** asymmetric key authentication (JWT / EdDSA).
+
+| | |
+|---|---|
+| **Version** | 0.2.0 |
+| **Python** | 3.10+ |
+| **Auth** | Ed25519 + JWT (EdDSA) |
+| **Transport** | httpx (sync & async) |
+| **License** | MIT |
 
 ## Installation
 
@@ -14,10 +22,15 @@ pip install pm-party-client
 from pm_party_client import PartyClient
 
 client = PartyClient(
-    url="https://your-pm-instance.com/graphql",
+    url="https://pm.example.com/graphql",
     app_id="your-app-id",
-    private_key_path="path/to/private_key.pem",  # or use private_key="-----BEGIN PRIVATE KEY-----\n..."
+    private_key_path="path/to/private_key.pem",
 )
+
+# Test connectivity first
+health = client.health()
+print(health)
+# {'status': 200, 'message': 'connected', 'party': {'app_id': '...', 'app_name': '...'}}
 
 # Execute a query
 result = client.query("""
@@ -29,18 +42,34 @@ result = client.query("""
         }
     }
 """)
-
 print(result)
+
+client.close()
 ```
 
+---
+
 ## Configuration
+
+### Constructor parameters
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `url` | `str` | **Yes** | — | PM GraphQL endpoint URL |
+| `app_id` | `str` | **Yes** | — | App ID assigned by Project Manager |
+| `private_key` | `str` | * | — | Ed25519 private key as PEM string |
+| `private_key_path` | `str` | * | — | Path to Ed25519 private key `.pem` file |
+| `token_lifetime` | `int` | No | `600` | JWT lifetime in seconds (1–3600) |
+| `timeout` | `float` | No | `30.0` | HTTP request timeout in seconds |
+
+> \* Provide **either** `private_key` or `private_key_path`, not both.
 
 ### Using a key file
 
 ```python
 client = PartyClient(
     url="https://pm.example.com/graphql",
-    app_id="a1b2c3d4-...",
+    app_id="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     private_key_path="/secure/location/private_key.pem",
 )
 ```
@@ -50,14 +79,12 @@ client = PartyClient(
 ```python
 client = PartyClient(
     url="https://pm.example.com/graphql",
-    app_id="a1b2c3d4-...",
+    app_id="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     private_key="-----BEGIN PRIVATE KEY-----\nMC4CAQ...\n-----END PRIVATE KEY-----",
 )
 ```
 
-### Token lifetime
-
-Tokens are short-lived by default (10 minutes). You can adjust:
+### Custom token lifetime
 
 ```python
 client = PartyClient(
@@ -68,9 +95,38 @@ client = PartyClient(
 )
 ```
 
-## Usage
+---
 
-### Query
+## API Reference
+
+### `health()` → `dict`
+
+Test connectivity and authentication against the PM backend. Calls `GET /api/v1/party/health` with a signed JWT. Use this to verify your credentials before making real API calls.
+
+```python
+result = client.health()
+```
+
+**Returns:**
+
+```python
+{
+    "status": 200,
+    "message": "connected",
+    "party": {
+        "app_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "app_name": "My Application"
+    }
+}
+```
+
+**Raises:** `PMAuthError` (bad credentials), `PMConnectionError` (network issues)
+
+---
+
+### `query(query, *, variables=None, operation_name=None, headers=None)` → `dict`
+
+Execute a GraphQL query.
 
 ```python
 result = client.query("""
@@ -78,13 +134,16 @@ result = client.query("""
         getParty(appId: $appId) {
             app_name
             status
-            public_key
         }
     }
 """, variables={"appId": "some-app-id"})
 ```
 
-### Mutation
+---
+
+### `mutate(query, *, variables=None, operation_name=None, headers=None)` → `dict`
+
+Execute a GraphQL mutation.
 
 ```python
 result = client.mutate("""
@@ -98,45 +157,70 @@ result = client.mutate("""
 """, variables={"input": {"app_name": "New Service"}})
 ```
 
-### Raw execute
+---
+
+### `execute(query, *, variables=None, operation_name=None, headers=None)` → `dict`
+
+Low-level method used by `query()` and `mutate()`. Accepts an optional `operation_name` and custom `headers`.
 
 ```python
 result = client.execute(
-    query="query { me { id email } }",
-    variables={},
-    operation_name="GetMe",
-)
-```
-
-### Custom headers
-
-```python
-result = client.query(
-    "query { getParties { app_id } }",
+    query="query { getParties { app_id } }",
     headers={"X-Request-Id": "abc-123"},
 )
 ```
 
+---
+
+### `close()`
+
+Close the underlying HTTP connection. Also supports context manager usage:
+
+```python
+with PartyClient(url=..., app_id=..., private_key=...) as client:
+    result = client.query("query { getParties { app_id } }")
+# Connection closed automatically
+```
+
+---
+
 ## Async Support
+
+`AsyncPartyClient` has the same API, all methods are `async`:
 
 ```python
 from pm_party_client import AsyncPartyClient
 
-client = AsyncPartyClient(
+async with AsyncPartyClient(
     url="https://pm.example.com/graphql",
     app_id="a1b2c3d4-...",
     private_key_path="key.pem",
-)
+) as client:
+    # Health check
+    health = await client.health()
 
-result = await client.query("query { getParties { app_id } }")
-await client.close()
+    # Query
+    result = await client.query("query { getParties { app_id app_name } }")
 
-# Or use as async context manager
-async with AsyncPartyClient(url=..., app_id=..., private_key_path=...) as client:
-    result = await client.query("query { getParties { app_id } }")
+    # Mutation
+    result = await client.mutate(
+        "mutation RevokeParty($appId: String!) { revokeParty(appId: $appId) { success message } }",
+        variables={"appId": "some-app-id"},
+    )
 ```
 
+---
+
 ## Error Handling
+
+All exceptions inherit from `PMClientError`:
+
+| Exception | When raised |
+|---|---|
+| `PMAuthError` | Bad private key, missing credentials, JWT signing failure, 401 from server |
+| `PMConnectionError` | Network timeout, DNS failure, HTTP 4xx/5xx (non-401) |
+| `PMGraphQLError` | GraphQL response contains `errors` array (access via `.errors`) |
+| `PMClientError` | Base class for all the above |
 
 ```python
 from pm_party_client.exceptions import (
@@ -147,41 +231,45 @@ from pm_party_client.exceptions import (
 )
 
 try:
-    result = client.query("query { me { id } }")
+    result = client.query("query { getParties { app_id } }")
 except PMAuthError as e:
     print(f"Authentication failed: {e}")
 except PMGraphQLError as e:
-    print(f"GraphQL errors: {e.errors}")
+    print(f"GraphQL errors: {e.errors}")  # list of error dicts
 except PMConnectionError as e:
     print(f"Connection failed: {e}")
 except PMClientError as e:
     print(f"Client error: {e}")
 ```
 
-## Health Check
+---
 
-Test your connection and credentials before making real API calls:
+## How It Works
 
-```python
-result = client.health()
-# {'status': 200, 'message': 'connected', 'party': {'app_id': '...', 'app_name': '...'}}
+1. You generate an **Ed25519 key pair** and register the **public key** with Project Manager.
+2. The client loads your **private key** and creates a short-lived **JWT** (signed with EdDSA) for each request.
+3. The JWT is sent as `Authorization: Bearer <token>` — Project Manager verifies it against your stored public key.
+4. Tokens are **never stored** — a fresh token is generated per request.
+
+### Generate a key pair
+
+```bash
+# Generate private key
+openssl genpkey -algorithm Ed25519 -out private_key.pem
+
+# Extract public key (upload this to Project Manager)
+openssl pkey -in private_key.pem -pubout -out public_key.pem
 ```
 
-Async:
-
-```python
-result = await async_client.health()
-```
-
-## Python Version Support
-
-- Python 3.10+
+---
 
 ## Dependencies
 
-- `PyJWT >= 2.8.0`
-- `cryptography >= 42.0.0`
-- `httpx >= 0.25.0`
+| Package | Version |
+|---|---|
+| `PyJWT` | >= 2.8.0 |
+| `cryptography` | >= 42.0.0 |
+| `httpx` | >= 0.25.0 |
 
 ## License
 
